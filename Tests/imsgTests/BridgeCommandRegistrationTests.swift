@@ -98,6 +98,11 @@ func injectedHelperWiresNativePollSend() throws {
 
   #expect(source.contains("send-poll"))
   #expect(source.contains("com.apple.messages.Polls"))
+  #expect(source.contains("MSMessageTemplateLayout"))
+  #expect(source.contains("MSMessageLiveLayout"))
+  #expect(source.contains(#""liveLayoutInfo""#))
+  #expect(source.contains(#""ai""#))
+  #expect(source.contains("pollPreviewImageData"))
   #expect(sendPollBody.contains("buildPollCreationPayloadData"))
   #expect(sendPollBody.contains("buildPollIMMessage"))
   #expect(sendPollBody.contains("dispatchIMMessageInChat(chat, imMessage)"))

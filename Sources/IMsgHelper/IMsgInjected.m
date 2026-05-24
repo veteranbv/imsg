@@ -10,6 +10,7 @@
 //
 
 #import <Foundation/Foundation.h>
+#import <AppKit/AppKit.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <os/lock.h>
@@ -1362,12 +1363,104 @@ static NSArray<NSString *> *normalizedPollOptions(NSArray *rawOptions) {
     return options;
 }
 
+static NSData *pollPreviewImageData(void) {
+    NSBitmapImageRep *rep =
+        [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
+                                                pixelsWide:162
+                                                pixelsHigh:162
+                                             bitsPerSample:8
+                                           samplesPerPixel:4
+                                                  hasAlpha:YES
+                                                  isPlanar:NO
+                                            colorSpaceName:NSDeviceRGBColorSpace
+                                               bytesPerRow:0
+                                              bitsPerPixel:0];
+    if (!rep) return nil;
+
+    NSGraphicsContext *context = [NSGraphicsContext graphicsContextWithBitmapImageRep:rep];
+    if (!context) return nil;
+    [NSGraphicsContext saveGraphicsState];
+    [NSGraphicsContext setCurrentContext:context];
+
+    [[NSColor colorWithCalibratedRed:0.96 green:0.96 blue:0.98 alpha:1.0] setFill];
+    NSRectFill(NSMakeRect(0, 0, 162, 162));
+
+    [[NSColor colorWithCalibratedRed:0.16 green:0.40 blue:0.86 alpha:1.0] setFill];
+    NSBezierPath *badge = [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(25, 25, 112, 112)
+                                                          xRadius:24
+                                                          yRadius:24];
+    [badge fill];
+
+    [[NSColor whiteColor] setFill];
+    for (NSInteger i = 0; i < 3; i++) {
+        CGFloat y = 103 - (i * 28);
+        [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(48, y, 10, 10)] fill];
+        NSBezierPath *line = [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(68, y + 1, 46, 8)
+                                                             xRadius:4
+                                                             yRadius:4];
+        [line fill];
+    }
+
+    [NSGraphicsContext restoreGraphicsState];
+    return [rep representationUsingType:NSBitmapImageFileTypeJPEG
+                             properties:@{NSImageCompressionFactor: @0.82}];
+}
+
+static NSData *archivePollLiveLayoutInfo(NSError **outError) {
+    NSDictionary *layoutInfo = @{
+        @"layoutClass": @"MSMessageLiveLayout",
+        @"userInfo": @{}
+    };
+    if (@available(macOS 10.13, *)) {
+        return [NSKeyedArchiver archivedDataWithRootObject:layoutInfo
+                                     requiringSecureCoding:NO
+                                                     error:outError];
+    }
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    return [NSKeyedArchiver archivedDataWithRootObject:layoutInfo];
+    #pragma clang diagnostic pop
+}
+
 static NSData *archivePollPayloadEnvelope(NSURL *url,
                                           NSUUID *sessionIdentifier,
                                           NSError **outError) {
+    NSData *previewImage = pollPreviewImageData();
+    if (!previewImage.length) {
+        if (outError) {
+            *outError = [NSError errorWithDomain:@"imsg.poll"
+                                           code:1
+                                       userInfo:@{
+                NSLocalizedDescriptionKey: @"Could not render poll preview image"
+            }];
+        }
+        return nil;
+    }
+
+    NSError *layoutError = nil;
+    NSData *liveLayoutInfo = archivePollLiveLayoutInfo(&layoutError);
+    if (!liveLayoutInfo.length) {
+        if (outError) *outError = layoutError;
+        return nil;
+    }
+
+    NSString *previewText = @"Sent a poll";
+    NSDictionary *userInfo = @{
+        @"caption": previewText,
+        @"tertiary-subcaption": @"",
+        @"image-subtitle": @"",
+        @"subcaption": @"",
+        @"image-title": @"",
+        @"secondary-subcaption": @""
+    };
     NSDictionary *envelope = @{
+        @"userInfo": userInfo,
+        @"ldtext": previewText,
         @"URL": url,
+        @"layoutClass": @"MSMessageTemplateLayout",
+        @"ai": previewImage,
         @"sessionIdentifier": sessionIdentifier,
+        @"liveLayoutInfo": liveLayoutInfo,
         @"an": @"Polls"
     };
     if (@available(macOS 10.13, *)) {
